@@ -1,0 +1,8 @@
+config.json
+config.json.tmp
+emails.db*
+__pycache__/
+*.pyc
+debug_out/
+.venv/
+browser_profiles/

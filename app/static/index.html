@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Master Inbox</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          paper: "#f5f3ee", card: "#fffdf9", ink: "#1d1c1a", muted: "#6f6a60",
+          line: "#e2ded4", accent: "#0f766e", gmail: "#c5221f",
+          outlook: "#0f6cbd", instaddr: "#b45309"
+        },
+        fontFamily: {
+          sans: ["Inter", "ui-sans-serif", "system-ui", "Segoe UI", "sans-serif"],
+          mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"]
+        }
+      }
+    }
+  };
+</script>
+<style>
+  html, body { height: 100%; }
+  .scroll-thin::-webkit-scrollbar { width: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #d6d1c4; border-radius: 4px; }
+  .row-new { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: #d1fae5; } to { background: transparent; } }
+</style>
+</head>
+<body class="bg-paper text-ink font-sans text-sm">
+<div class="h-full flex flex-col">
+
+  <!-- Top bar -->
+  <header class="flex items-center gap-4 px-4 h-14 border-b border-line bg-card shrink-0">
+    <div class="flex items-center gap-2 w-56 shrink-0">
+      <div class="w-7 h-7 rounded bg-ink text-card grid place-items-center font-mono text-xs">MI</div>
+      <div class="font-semibold tracking-tight">Master Inbox</div>
+    </div>
+    <div class="flex-1 max-w-2xl relative">
+      <input id="search" type="search" autocomplete="off"
+             placeholder="Search sender, subject, body, account, code...   ( / )"
+             class="w-full h-9 pl-3 pr-3 rounded border border-line bg-paper focus:bg-white focus:outline-none focus:border-accent">
+    </div>
+    <label class="flex items-center gap-2 text-muted select-none cursor-pointer">
+      <input id="unreadOnly" type="checkbox" class="accent-teal-700"> Unread only
+    </label>
+    <div class="flex-1"></div>
+    <div id="liveBadge" class="flex items-center gap-2 text-muted">
+      <span id="liveDot" class="w-2 h-2 rounded-full bg-gray-400"></span>
+      <span id="liveText">connecting</span>
+    </div>
+    <button id="btnAccounts" class="h-9 px-3 rounded border border-line hover:border-ink">Accounts</button>
+  </header>
+
+  <div class="flex-1 flex min-h-0">
+
+    <!-- Sidebar filters -->
+    <aside class="w-60 shrink-0 border-r border-line overflow-y-auto scroll-thin p-3 space-y-5">
+      <div>
+        <button data-clear class="w-full flex justify-between items-center px-2 py-1.5 rounded hover:bg-white" id="allMail">
+          <span class="font-medium">All mail</span>
+          <span class="text-muted font-mono text-xs" id="allCount">0</span>
+        </button>
+      </div>
+      <div>
+        <div class="px-2 mb-1 text-xs uppercase tracking-wider text-muted">Platform</div>
+        <div id="facetPlatforms"></div>
+      </div>
+      <div>
+        <div class="px-2 mb-1 text-xs uppercase tracking-wider text-muted">Domain</div>
+        <div id="facetDomains"></div>
+      </div>
+      <div>
+        <div class="px-2 mb-1 text-xs uppercase tracking-wider text-muted">Account</div>
+        <input id="accountFilterInput" placeholder="Filter accounts"
+               class="w-full h-7 px-2 mb-1 rounded border border-line bg-paper focus:bg-white focus:outline-none text-xs">
+        <div id="facetAccounts"></div>
+      </div>
+    </aside>
+
+    <!-- Feed -->
+    <section class="w-[30rem] shrink-0 border-r border-line flex flex-col min-h-0 bg-card">
+      <div class="flex items-center justify-between px-3 h-10 border-b border-line text-muted shrink-0">
+        <div id="feedTitle" class="truncate">All mail</div>
+        <button id="btnReadAll" class="text-xs hover:text-ink">Mark all read</button>
+      </div>
+      <div id="feed" class="flex-1 overflow-y-auto scroll-thin"></div>
+    </section>
+
+    <!-- Detail -->
+    <main id="detail" class="flex-1 min-w-0 overflow-y-auto scroll-thin">
+      <div class="h-full grid place-items-center text-muted">Select a message</div>
+    </main>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div id="toasts" class="fixed bottom-4 right-4 space-y-2 z-40"></div>
+
+<!-- Accounts modal -->
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/40 p-6 overflow-y-auto">
+  <div class="max-w-4xl mx-auto bg-card rounded-lg border border-line shadow-xl">
+    <div class="flex items-center justify-between px-5 h-12 border-b border-line">
+      <div class="font-semibold">Accounts</div>
+      <button id="btnCloseModal" class="text-muted hover:text-ink">Close</button>
+    </div>
+    <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div>
+        <div class="font-medium mb-2">Add one account</div>
+        <form id="addForm" class="space-y-2">
+          <select name="platform" class="w-full h-9 px-2 rounded border border-line bg-white">
+            <option value="gmail">Gmail (IMAP)</option>
+            <option value="outlook">Outlook (IMAP)</option>
+            <option value="instaddr">InstAddr (session)</option>
+            <option value="imap">Other IMAP server</option>
+          </select>
+          <input name="email" required placeholder="Email address (or a label for InstAddr)"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <div data-for="gmail outlook imap">
+            <input name="password" type="password" placeholder="Password / App password" autocomplete="new-password"
+                   class="w-full h-9 px-2 rounded border border-line bg-white">
+          </div>
+          <div data-for="imap" class="flex gap-2">
+            <input name="host" placeholder="IMAP host" class="flex-1 h-9 px-2 rounded border border-line bg-white">
+            <input name="port" placeholder="993" class="w-20 h-9 px-2 rounded border border-line bg-white">
+          </div>
+          <div data-for="gmail outlook imap">
+            <input name="folders" placeholder="Folders, e.g. INBOX;[Gmail]/Spam (optional)"
+                   class="w-full h-9 px-2 rounded border border-line bg-white">
+          </div>
+          <details data-for="gmail outlook" class="text-muted">
+            <summary class="cursor-pointer">OAuth2 instead of password</summary>
+            <div class="space-y-2 mt-2">
+              <input name="client_id" placeholder="Client ID" class="w-full h-9 px-2 rounded border border-line bg-white text-ink">
+              <input name="client_secret" placeholder="Client secret (Gmail)" class="w-full h-9 px-2 rounded border border-line bg-white text-ink">
+              <input name="refresh_token" placeholder="Refresh token" class="w-full h-9 px-2 rounded border border-line bg-white text-ink">
+              <input name="tenant" placeholder="Tenant (Outlook, default consumers)" class="w-full h-9 px-2 rounded border border-line bg-white text-ink">
+            </div>
+          </details>
+          <div data-for="instaddr" class="space-y-2">
+            <input name="session_key" placeholder="session token / shash (optional; or use Link below)" class="w-full h-9 px-2 rounded border border-line bg-white">
+            <input name="csrf_token" placeholder="cookie_csrf_token value (optional)" class="w-full h-9 px-2 rounded border border-line bg-white">
+          </div>
+          <input name="proxy" placeholder="Proxy (optional): http://user:pass@host:port or socks5://host:port"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <button class="h-9 px-4 rounded bg-ink text-card hover:bg-accent">Add account</button>
+        </form>
+
+        <div class="font-medium mt-6 mb-2">Link InstAddr (zero-trust, no login here)</div>
+        <p class="text-muted mb-2">Open m.kuku.lu in your own browser while logged in, then drag this
+          button to your bookmarks bar and click it on that tab. It sends the active
+          session to this tool; we keep it alive in the background afterwards.</p>
+        <div class="flex items-center gap-2">
+          <a id="bookmarklet" href="#" class="px-3 h-9 inline-flex items-center rounded bg-instaddr text-white cursor-move"
+             title="Drag me to your bookmarks bar" draggable="true">Link InstAddr -> Master Inbox</a>
+          <button id="btnCopyBookmarklet" class="px-2 h-9 rounded border border-line hover:border-ink text-xs">Copy code</button>
+        </div>
+        <p class="text-muted mt-3 mb-1">Or paste a session token manually (copy <code>cookie_sessionhash</code>
+          from DevTools -> Application -> Cookies):</p>
+        <form id="linkForm" class="space-y-2">
+          <input name="email" required placeholder="Label for this account (e.g. lamha.pl box)"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <input name="session_key" required placeholder="session token (cookie_sessionhash / shash)"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <input name="csrf_token" placeholder="cookie_csrf_token (optional)"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <input name="proxy" placeholder="Proxy (optional)"
+                 class="w-full h-9 px-2 rounded border border-line bg-white">
+          <button class="h-9 px-4 rounded bg-ink text-card hover:bg-accent">Link session</button>
+          <span id="linkResult" class="ml-2 text-xs text-muted"></span>
+        </form>
+
+        <div class="font-medium mt-6 mb-2">Bulk import</div>
+        <p class="text-muted mb-2">Upload a CSV (see accounts.example.csv) or a config.json style file.
+          Existing accounts with the same platform and email are updated.</p>
+        <input id="importFile" type="file" accept=".csv,.json,text/csv,application/json" class="block w-full text-xs">
+        <pre id="importResult" class="mt-2 text-xs whitespace-pre-wrap text-muted"></pre>
+
+        <div class="font-medium mt-6 mb-2">Inbound webhook (InstAddr Method A)</div>
+        <div class="text-muted">POST raw mail or JSON to:</div>
+        <div class="flex gap-2 mt-1">
+          <code id="webhookUrl" class="flex-1 px-2 py-1.5 rounded bg-paper border border-line font-mono text-xs break-all"></code>
+          <button id="btnCopyWebhook" class="px-2 rounded border border-line hover:border-ink">Copy</button>
+        </div>
+        <div id="smtpInfo" class="text-muted mt-2"></div>
+
+        <div class="font-medium mt-6 mb-2">Troubleshooting</div>
+        <label class="flex items-start gap-2 text-muted cursor-pointer">
+          <input id="debugDump" type="checkbox" class="mt-1 accent-teal-700">
+          <span>Save raw InstAddr pages to the <code>debug_out</code> folder (latest inbox list and
+            latest opened message per account). Use when a message shows no body.</span>
+        </label>
+      </div>
+      <div>
+        <div class="font-medium mb-2">Configured accounts <span id="accCount" class="text-muted font-normal"></span></div>
+        <div id="accountList" class="border border-line rounded divide-y divide-line max-h-[32rem] overflow-y-auto scroll-thin"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PAGE = 50;
+  var state = {
+    filters: { platform: "", domain: "", account: "", q: "", unread: false },
+    emails: [], total: 0, selectedId: null, current: null,
+    viewMode: "text", accountNeedle: "", facets: null, freshIds: {}
+  };
+  var PLATFORM_CLASS = { Gmail: "bg-gmail", Outlook: "bg-outlook", InstAddr: "bg-instaddr" };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) { node.className = cls; }
+    if (text !== undefined && text !== null) { node.textContent = text; }
+    return node;
+  }
+
+  function api(path, options) {
+    return fetch(path, options).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) { throw new Error(data.detail || ("HTTP " + res.status)); }
+        return data;
+      });
+    });
+  }
+
+  function postJson(path, body) {
+    return api(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                       body: JSON.stringify(body || {}) });
+  }
+
+  function toast(message, actionLabel, action) {
+    var box = el("div", "flex items-center gap-3 px-3 py-2 rounded bg-ink text-card shadow-lg max-w-sm");
+    box.appendChild(el("div", "truncate", message));
+    if (actionLabel) {
+      var btn = el("button", "shrink-0 px-2 py-0.5 rounded bg-card text-ink font-mono text-xs", actionLabel);
+      btn.addEventListener("click", function () { action(); box.remove(); });
+      box.appendChild(btn);
+    }
+    $("toasts").appendChild(box);
+    setTimeout(function () { box.remove(); }, 7000);
+  }
+
+  function copyText(text, label) {
+    function done() { toast("Copied " + (label || text)); }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+    function fallback() {
+      var area = el("textarea");
+      area.value = text;
+      area.style.position = "fixed"; area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      try { document.execCommand("copy"); done(); } catch (err) { toast("Copy failed"); }
+      area.remove();
+    }
+  }
+
+  function relTime(iso) {
+    var then = new Date(iso).getTime();
+    if (isNaN(then)) { return ""; }
+    var secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (secs < 45) { return "now"; }
+    if (secs < 3600) { return Math.round(secs / 60) + "m"; }
+    if (secs < 86400) { return Math.round(secs / 3600) + "h"; }
+    if (secs < 7 * 86400) { return Math.round(secs / 86400) + "d"; }
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function pad2(n) { return (n < 10 ? "0" : "") + n; }
+
+  // "14:06" for today, "Nov 12 14:06" for older mail (local time).
+  function clockTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return ""; }
+    var hm = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) { return hm; }
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + hm;
+  }
+
+  // Exact local time with seconds plus the stored UTC value.
+  function fullTime(iso) {
+    var d = new Date(iso);
+    if (!iso || isNaN(d.getTime())) { return iso || ""; }
+    return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric",
+                                         hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+           "   (" + iso + " UTC)";
+  }
+
+  // An HTML body counts only if it would show something: text or an image.
+  function hasVisibleHtml(html) {
+    if (!html) { return false; }
+    if (/<img\b/i.test(html)) { return true; }
+    return html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]*>/g, "")
+               .replace(/&nbsp;/g, " ").trim().length > 1;
+  }
+
+  function senderName(sender) {
+    var match = /^\s*"?([^"<]*?)"?\s*<[^>]+>\s*$/.exec(sender || "");
+    return (match && match[1].trim()) || sender || "(unknown sender)";
+  }
+
+  function safeUrl(url) {
+    return /^https?:\/\//i.test(url || "") ? url : "";
+  }
+
+  // ---- facets --------------------------------------------------------
+
+  function facetRow(label, total, unread, active, onClick, dotClass) {
+    var row = el("button", "w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-white" +
+                 (active ? " bg-white ring-1 ring-line font-medium" : ""));
+    if (dotClass) { row.appendChild(el("span", "w-2 h-2 rounded-full shrink-0 " + dotClass)); }
+    var name = el("span", "flex-1 truncate", label);
+    name.title = label;
+    row.appendChild(name);
+    if (unread) { row.appendChild(el("span", "px-1.5 rounded-full bg-accent text-white font-mono text-[10px]", String(unread))); }
+    row.appendChild(el("span", "text-muted font-mono text-xs", String(total)));
+    row.addEventListener("click", onClick);
+    return row;
+  }
+
+  function setFilter(key, value) {
+    state.filters[key] = state.filters[key] === value ? "" : value;
+    loadEmails(true);
+    renderFacets();
+  }
+
+  function renderFacets() {
+    var facets = state.facets;
+    if (!facets) { return; }
+    $("allCount").textContent = facets.unread ? facets.unread + " / " + facets.total : String(facets.total);
+    var f = state.filters;
+
+    var box = $("facetPlatforms");
+    box.replaceChildren();
+    facets.platforms.forEach(function (item) {
+      box.appendChild(facetRow(item.value, item.total, item.unread, f.platform === item.value,
+        function () { setFilter("platform", item.value); }, PLATFORM_CLASS[item.value] || "bg-gray-400"));
+    });
+    if (!facets.platforms.length) { box.appendChild(el("div", "px-2 text-muted", "No mail yet")); }
+
+    box = $("facetDomains");
+    box.replaceChildren();
+    facets.domains.slice(0, 60).forEach(function (item) {
+      box.appendChild(facetRow(item.value, item.total, item.unread, f.domain === item.value,
+        function () { setFilter("domain", item.value); }));
+    });
+
+    box = $("facetAccounts");
+    box.replaceChildren();
+    var needle = state.accountNeedle.toLowerCase();
+    facets.accounts.filter(function (item) {
+      return !needle || item.value.toLowerCase().indexOf(needle) !== -1;
+    }).slice(0, 200).forEach(function (item) {
+      box.appendChild(facetRow(item.value, item.total, item.unread, f.account === item.value,
+        function () { setFilter("account", item.value); }));
+    });
+
+    var parts = [];
+    if (f.platform) { parts.push(f.platform); }
+    if (f.domain) { parts.push("@" + f.domain); }
+    if (f.account) { parts.push(f.account); }
+    if (f.q) { parts.push('"' + f.q + '"'); }
+    if (f.unread) { parts.push("unread"); }
+    $("feedTitle").textContent = (parts.join("  /  ") || "All mail") + "  (" + state.total + ")";
+  }
+
+  function loadFacets() {
+    return api("/api/facets").then(function (data) { state.facets = data; renderFacets(); });
+  }
+
+  // ---- feed ----------------------------------------------------------
+
+  function queryString(offset) {
+    var f = state.filters;
+    var params = new URLSearchParams();
+    if (f.platform) { params.set("platform", f.platform); }
+    if (f.domain) { params.set("domain", f.domain); }
+    if (f.account) { params.set("account", f.account); }
+    if (f.q) { params.set("q", f.q); }
+    if (f.unread) { params.set("unread", "1"); }
+    params.set("limit", String(PAGE));
+    params.set("offset", String(offset));
+    return params.toString();
+  }
+
+  var loadToken = 0;
+  function loadEmails(reset) {
+    var token = ++loadToken;
+    var keep = reset ? Math.max(PAGE, 0) : state.emails.length + PAGE;
+    var offset = reset ? 0 : state.emails.length;
+    return api("/api/emails?" + queryString(offset)).then(function (data) {
+      if (token !== loadToken) { return; }
+      state.total = data.total;
+      state.emails = reset ? data.emails : state.emails.concat(data.emails).slice(0, keep);
+      renderFeed();
+      renderFacets();
+    }).catch(function (err) { toast("Load failed: " + err.message); });
+  }
+
+  // Reload what is on screen (same number of rows) after a live event.
+  function refreshVisible() {
+    var token = ++loadToken;
+    var count = Math.min(200, Math.max(PAGE, state.emails.length));
+    var params = new URLSearchParams(queryString(0));
+    params.set("limit", String(count));
+    return api("/api/emails?" + params.toString()).then(function (data) {
+      if (token !== loadToken) { return; }
+      state.total = data.total;
+      state.emails = data.emails;
+      renderFeed();
+      renderFacets();
+    }).catch(function () {});
+  }
+
+  function renderFeed() {
+    var feed = $("feed");
+    feed.replaceChildren();
+    if (!state.emails.length) {
+      feed.appendChild(el("div", "p-8 text-center text-muted", "No messages match."));
+      return;
+    }
+    state.emails.forEach(function (mail) {
+      var row = el("div", "px-3 py-2.5 border-b border-line cursor-pointer hover:bg-paper" +
+                   (mail.id === state.selectedId ? " bg-paper" : "") +
+                   (state.freshIds[mail.id] ? " row-new" : ""));
+      delete state.freshIds[mail.id];
+
+      var top = el("div", "flex items-center gap-2");
+      top.appendChild(el("span", "w-2 h-2 rounded-full shrink-0 " +
+                         (mail.is_read ? "bg-transparent border border-line" : "bg-accent")));
+      top.appendChild(el("span", "truncate flex-1 " + (mail.is_read ? "" : "font-semibold"), senderName(mail.sender)));
+      top.lastChild.title = mail.sender;
+      top.appendChild(el("span", "shrink-0 px-1.5 rounded text-white text-[10px] leading-4 " +
+                         (PLATFORM_CLASS[mail.source_platform] || "bg-gray-500"), mail.source_platform));
+      var time = el("span", "shrink-0 text-muted font-mono text-xs text-right", clockTime(mail.received_at) +
+                    "  " + relTime(mail.received_at));
+      time.title = new Date(mail.received_at).toLocaleString();
+      top.appendChild(time);
+      row.appendChild(top);
+
+      row.appendChild(el("div", "pl-4 truncate " + (mail.is_read ? "text-muted" : ""), mail.subject));
+      var toRow = el("div", "pl-4 mt-0.5");
+      var toBadge = el("span", "inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-accent/40 text-accent font-mono text-[11px] max-w-full");
+      toBadge.appendChild(el("span", "opacity-60", "to"));
+      var toText = el("span", "truncate", mail.recipient || mail.account_email);
+      toText.title = mail.recipient || mail.account_email;
+      toBadge.appendChild(toText);
+      toRow.appendChild(toBadge);
+      row.appendChild(toRow);
+
+      if (mail.extracted_otp || mail.extracted_link) {
+        var actions = el("div", "pl-4 mt-1.5 flex items-center gap-2");
+        if (mail.extracted_otp) {
+          var otp = el("button", "px-2 py-0.5 rounded border border-accent text-accent font-mono font-semibold tracking-widest hover:bg-accent hover:text-white", mail.extracted_otp);
+          otp.title = "Copy code";
+          otp.addEventListener("click", function (ev) { ev.stopPropagation(); copyText(mail.extracted_otp, "code " + mail.extracted_otp); });
+          actions.appendChild(otp);
+        }
+        var url = safeUrl(mail.extracted_link);
+        if (url) {
+          var link = el("a", "px-2 py-0.5 rounded border border-line text-xs hover:border-ink", "Open link");
+          link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.title = url;
+          link.addEventListener("click", function (ev) { ev.stopPropagation(); });
+          actions.appendChild(link);
+          var copyLink = el("button", "px-2 py-0.5 rounded border border-line text-xs hover:border-ink", "Copy link");
+          copyLink.addEventListener("click", function (ev) { ev.stopPropagation(); copyText(url, "link"); });
+          actions.appendChild(copyLink);
+        }
+        row.appendChild(actions);
+      }
+      row.addEventListener("click", function () { openEmail(mail.id); });
+      feed.appendChild(row);
+    });
+    if (state.emails.length < state.total) {
+      var more = el("button", "w-full py-3 text-muted hover:text-ink", "Load more (" + (state.total - state.emails.length) + " left)");
+      more.addEventListener("click", function () { loadEmails(false); });
+      feed.appendChild(more);
+    }
+  }
+
+  // ---- detail --------------------------------------------------------
+
+  function openEmail(id) {
+    state.selectedId = id;
+    api("/api/emails/" + id).then(function (mail) {
+      state.current = mail;
+      // Requirement 3: rich HTML is the default when the mail has it.
+      state.viewMode = hasVisibleHtml(mail.body_html) ? "html" : "text";
+      state.showHeaders = false;
+      renderDetail();
+      if (!mail.is_read) {
+        postJson("/api/emails/" + id + "/read", { is_read: true }).then(function () {
+          state.emails.forEach(function (m) { if (m.id === id) { m.is_read = 1; } });
+          renderFeed();
+          loadFacets();
+        });
+      } else { renderFeed(); }
+    }).catch(function (err) { toast(err.message); });
+  }
+
+  function metaLine(label, value) {
+    var line = el("div", "flex gap-3");
+    line.appendChild(el("div", "w-16 shrink-0 text-muted", label));
+    line.appendChild(el("div", "min-w-0 break-words", value));
+    return line;
+  }
+
+  function renderDetail() {
+    var mail = state.current;
+    var root = $("detail");
+    root.replaceChildren();
+    if (!mail) {
+      root.appendChild(el("div", "h-full grid place-items-center text-muted", "Select a message"));
+      return;
+    }
+    var wrap = el("div", "p-6 max-w-4xl");
+    wrap.appendChild(el("h1", "text-xl font-semibold tracking-tight mb-3", mail.subject));
+
+    var meta = el("div", "space-y-1 mb-4");
+    meta.appendChild(metaLine("From", mail.sender || "(unknown)"));
+    meta.appendChild(metaLine("To", mail.recipient || mail.account_email));
+    meta.appendChild(metaLine("Account", mail.account_email + "  (" + mail.source_platform +
+                              (mail.custom_domain ? ", domain " + mail.custom_domain : "") + ")"));
+    meta.appendChild(metaLine("Received", fullTime(mail.received_at)));
+    meta.appendChild(metaLine("Fetched", fullTime(mail.fetched_at)));
+    if (mail.message_id) { meta.appendChild(metaLine("Msg ID", mail.message_id)); }
+    if (mail.raw_headers) {
+      var toggle = el("button", "text-xs text-accent hover:underline", state.showHeaders ? "Hide full headers" : "Show full headers");
+      toggle.addEventListener("click", function () { state.showHeaders = !state.showHeaders; renderDetail(); });
+      var line = el("div", "flex gap-3");
+      line.appendChild(el("div", "w-16 shrink-0 text-muted", "Headers"));
+      line.appendChild(toggle);
+      meta.appendChild(line);
+      if (state.showHeaders) {
+        meta.appendChild(el("pre", "mt-1 p-3 rounded border border-line bg-paper font-mono text-xs whitespace-pre-wrap break-all max-h-96 overflow-auto",
+                            mail.raw_headers));
+      }
+    }
+    wrap.appendChild(meta);
+
+    var url = safeUrl(mail.extracted_link);
+    if (mail.extracted_otp || url) {
+      var box = el("div", "mb-4 p-4 rounded-lg border border-accent/40 bg-emerald-50 flex flex-wrap items-center gap-4");
+      if (mail.extracted_otp) {
+        box.appendChild(el("div", "font-mono text-3xl font-semibold tracking-[0.3em]", mail.extracted_otp));
+        var copy = el("button", "h-9 px-4 rounded bg-accent text-white hover:bg-ink", "Copy code");
+        copy.addEventListener("click", function () { copyText(mail.extracted_otp, "code " + mail.extracted_otp); });
+        box.appendChild(copy);
+      }
+      if (url) {
+        var open = el("a", "h-9 px-4 rounded bg-ink text-card hover:bg-accent inline-flex items-center", "Open verification link");
+        open.href = url; open.target = "_blank"; open.rel = "noopener noreferrer";
+        box.appendChild(open);
+        var copyLink = el("button", "h-9 px-3 rounded border border-line bg-white hover:border-ink", "Copy link");
+        copyLink.addEventListener("click", function () { copyText(url, "link"); });
+        box.appendChild(copyLink);
+        box.appendChild(el("div", "basis-full text-xs text-muted break-all font-mono", url));
+      }
+      wrap.appendChild(box);
+    }
+
+    var bar = el("div", "flex items-center gap-2 mb-3");
+    ["text", "html"].forEach(function (mode) {
+      if (mode === "html" && !hasVisibleHtml(mail.body_html)) { return; }
+      var btn = el("button", "px-3 h-8 rounded border " + (state.viewMode === mode ? "border-ink bg-white" : "border-line text-muted"),
+                   mode === "text" ? "Plain text" : "Original HTML");
+      btn.addEventListener("click", function () { state.viewMode = mode; renderDetail(); });
+      bar.appendChild(btn);
+    });
+    bar.appendChild(el("div", "flex-1"));
+    var unread = el("button", "px-3 h-8 rounded border border-line text-muted hover:text-ink", "Mark unread");
+    unread.addEventListener("click", function () {
+      postJson("/api/emails/" + mail.id + "/read", { is_read: false }).then(function () {
+        state.current = null; state.selectedId = null; renderDetail(); refreshVisible(); loadFacets();
+      });
+    });
+    bar.appendChild(unread);
+    var del = el("button", "px-3 h-8 rounded border border-line text-muted hover:text-red-700 hover:border-red-700", "Delete");
+    del.addEventListener("click", function () {
+      api("/api/emails/" + mail.id, { method: "DELETE" }).then(function () {
+        state.current = null; state.selectedId = null; renderDetail(); refreshVisible(); loadFacets();
+      });
+    });
+    bar.appendChild(del);
+    wrap.appendChild(bar);
+
+    if (state.viewMode === "html" && mail.body_html) {
+      // The email keeps its own styling and loads remote images (img-src is
+      // open), but its scripts never run: the sandbox omits allow-scripts.
+      // allow-same-origin is present only so the parent can measure the
+      // content height to auto-resize; with no allow-scripts it is safe.
+      var frame = el("iframe", "w-full rounded border border-line bg-white");
+      frame.style.height = "60vh";
+      frame.setAttribute("sandbox", "allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+      frame.setAttribute("referrerpolicy", "no-referrer");
+      // Injected into the mail's own <head>: open image loading, links in a
+      // new tab. No layout CSS is added, so tables, inline styles and image
+      // sizes render exactly as the sender wrote them.
+      var inject = '<meta charset="utf-8">' +
+        '<meta http-equiv="Content-Security-Policy" content="' +
+        "default-src 'none'; img-src * data: https: http: blob:; " +
+        "style-src 'unsafe-inline' * data:; font-src * data:; media-src * data:;" +
+        '"><base target="_blank">';
+      var html = mail.body_html;
+      if (/<head[\s>]/i.test(html)) {
+        html = html.replace(/<head([^>]*)>/i, function (m) { return m + inject; });
+      } else if (/<html[\s>]/i.test(html)) {
+        html = html.replace(/<html([^>]*)>/i, function (m) { return m + '<head>' + inject + '</head>'; });
+      } else {
+        html = '<!DOCTYPE html><html><head>' + inject +
+               '<style>body{margin:0;padding:12px}</style></head><body>' + html + '</body></html>';
+      }
+      frame.srcdoc = html;
+      var resize = function () {
+        try {
+          var doc = frame.contentDocument;
+          if (doc && doc.body) {
+            var height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight);
+            frame.style.height = Math.min(Math.max(height + 24, 200), 30000) + "px";
+          }
+        } catch (err) { /* opaque origin: keep the default height */ }
+      };
+      // Remote images arrive late and change the height; measure a few times.
+      frame.addEventListener("load", function () {
+        resize();
+        [300, 1200, 3000, 6000].forEach(function (ms) { setTimeout(resize, ms); });
+      });
+      wrap.appendChild(frame);
+    } else {
+      wrap.appendChild(el("pre", "whitespace-pre-wrap break-words font-sans leading-relaxed p-4 rounded border border-line bg-card",
+                          mail.body_text || "(empty body)"));
+    }
+    root.appendChild(wrap);
+  }
+
+  // ---- live feed -----------------------------------------------------
+
+  var refreshTimer = null;
+  function scheduleRefresh() {
+    if (refreshTimer) { return; }
+    refreshTimer = setTimeout(function () {
+      refreshTimer = null;
+      refreshVisible();
+      loadFacets();
+    }, 250);
+  }
+
+  function setLive(ok) {
+    $("liveDot").className = "w-2 h-2 rounded-full " + (ok ? "bg-emerald-500" : "bg-red-500");
+    $("liveText").textContent = ok ? "live" : "reconnecting";
+  }
+
+  function connectSocket() {
+    var scheme = location.protocol === "https:" ? "wss://" : "ws://";
+    var socket = new WebSocket(scheme + location.host + "/ws");
+    socket.onopen = function () { setLive(true); scheduleRefresh(); };
+    socket.onmessage = function (ev) {
+      var event;
+      try { event = JSON.parse(ev.data); } catch (err) { return; }
+      if (event.type === "new_email" && event.email) {
+        var mail = event.email;
+        state.freshIds[mail.id] = true;
+        scheduleRefresh();
+        if (mail.extracted_otp) {
+          toast(senderName(mail.sender) + ": " + mail.extracted_otp, "Copy",
+                function () { copyText(mail.extracted_otp, "code " + mail.extracted_otp); });
+        } else {
+          toast(senderName(mail.sender) + ": " + mail.subject);
+        }
+        document.title = "(new) Master Inbox";
+      } else if (event.type === "account_status" && !$("modal").classList.contains("hidden")) {
+        loadAccounts();
+      }
+    };
+    socket.onclose = function () { setLive(false); setTimeout(connectSocket, 2000); };
+    socket.onerror = function () { socket.close(); };
+  }
+
+  // ---- accounts modal ------------------------------------------------
+
+  var STATE_STYLE = { ok: "bg-emerald-500", connecting: "bg-amber-400", error: "bg-red-500",
+                      stopped: "bg-gray-400", disabled: "bg-gray-400" };
+
+  function loadAccounts() {
+    return api("/api/accounts").then(function (data) {
+      var list = $("accountList");
+      list.replaceChildren();
+      $("accCount").textContent = "(" + data.accounts.length + ")";
+      if (!data.accounts.length) {
+        list.appendChild(el("div", "p-4 text-muted", "No accounts yet. Add one or import a CSV."));
+      }
+      data.accounts.forEach(function (acc) {
+        var row = el("div", "flex items-start gap-3 p-3");
+        var dot = el("span", "mt-1.5 w-2 h-2 rounded-full shrink-0 " + (STATE_STYLE[acc.status.state] || "bg-gray-400"));
+        dot.title = acc.status.state;
+        row.appendChild(dot);
+        var body = el("div", "flex-1 min-w-0");
+        body.appendChild(el("div", "truncate font-medium", acc.email));
+        body.appendChild(el("div", "text-xs text-muted", acc.platform_label + " / " + acc.auth +
+                            (acc.proxy_set ? " / proxy" : "") + " / " + acc.status.state +
+                            (acc.status.fetched ? " / " + acc.status.fetched + " fetched" : "")));
+        if (acc.status.detail) { body.appendChild(el("div", "text-xs text-red-700 break-words", acc.status.detail)); }
+        row.appendChild(body);
+        var remove = el("button", "text-xs text-muted hover:text-red-700", "Remove");
+        remove.addEventListener("click", function () {
+          if (remove.dataset.armed !== "1") { remove.dataset.armed = "1"; remove.textContent = "Confirm?"; return; }
+          api("/api/accounts/" + acc.id, { method: "DELETE" }).then(loadAccounts);
+        });
+        row.appendChild(remove);
+        list.appendChild(row);
+      });
+      (data.config_errors || []).forEach(function (msg) {
+        list.appendChild(el("div", "p-3 text-xs text-red-700", "config.json: " + msg));
+      });
+    });
+  }
+
+  function syncFormFields() {
+    var platform = $("addForm").elements.platform.value;
+    $("addForm").querySelectorAll("[data-for]").forEach(function (node) {
+      node.classList.toggle("hidden", node.dataset.for.split(" ").indexOf(platform) === -1);
+    });
+  }
+
+  function buildBookmarklet(linkUrl, token) {
+    // Runs on the m.kuku.lu tab, reads the session cookie, posts it here.
+    var src = "(function(){" +
+      "var c={};document.cookie.split(';').forEach(function(p){var i=p.indexOf('=');" +
+      "if(i>0){c[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim());}});" +
+      "var s=c.cookie_sessionhash||c.shash||'';" +
+      "if(!s){alert('No readable session cookie on this page. If it is HttpOnly, " +
+      "use the manual token paste in Master Inbox.');return;}" +
+      "var l=prompt('Label for this account in Master Inbox:',location.hostname);" +
+      "if(l===null)return;" +
+      "fetch(" + JSON.stringify(linkUrl + "?token=" + token) +
+      ",{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'}," +
+      "body:JSON.stringify({email:l,session_key:s,csrf_token:c.cookie_csrf_token||''," +
+      "user_agent:navigator.userAgent})}).then(function(){alert('Linked '+l+" +
+      "' sent to Master Inbox. Open the dashboard to confirm it validated.');},function(e){alert('Link failed: '+e);});})();";
+    return "javascript:" + encodeURIComponent(src);
+  }
+
+  function openModal() {
+    $("modal").classList.remove("hidden");
+    syncFormFields();
+    loadAccounts();
+    api("/api/settings").then(function (cfg) {
+      $("webhookUrl").textContent = location.origin + cfg.webhook_path + "?token=" + cfg.webhook_secret + "&to=ADDRESS";
+      $("debugDump").checked = !!cfg.debug_dump;
+      $("smtpInfo").textContent = cfg.smtp_enabled
+        ? "SMTP catch-all receiver is listening on port " + cfg.smtp_port + "."
+        : "SMTP catch-all receiver is off (smtp_receiver.enabled in config.json).";
+      var href = buildBookmarklet(location.origin + cfg.link_path, cfg.link_token);
+      $("bookmarklet").setAttribute("href", href);
+      $("bookmarklet").dataset.code = href;
+      $("linkForm").dataset.url = location.origin + cfg.link_path + "?token=" + cfg.link_token;
+    });
+  }
+
+  // ---- wiring --------------------------------------------------------
+
+  var searchTimer = null;
+  $("search").addEventListener("input", function () {
+    clearTimeout(searchTimer);
+    var value = this.value;
+    searchTimer = setTimeout(function () { state.filters.q = value.trim(); loadEmails(true); }, 180);
+  });
+  $("unreadOnly").addEventListener("change", function () { state.filters.unread = this.checked; loadEmails(true); });
+  $("accountFilterInput").addEventListener("input", function () { state.accountNeedle = this.value; renderFacets(); });
+  $("allMail").addEventListener("click", function () {
+    state.filters.platform = ""; state.filters.domain = ""; state.filters.account = "";
+    loadEmails(true);
+  });
+  $("btnReadAll").addEventListener("click", function () {
+    var f = state.filters;
+    postJson("/api/emails/read-all", { platform: f.platform, domain: f.domain, account: f.account })
+      .then(function () { refreshVisible(); loadFacets(); });
+  });
+  $("btnAccounts").addEventListener("click", openModal);
+  $("btnCloseModal").addEventListener("click", function () { $("modal").classList.add("hidden"); });
+  $("modal").addEventListener("click", function (ev) { if (ev.target === this) { this.classList.add("hidden"); } });
+  $("btnCopyWebhook").addEventListener("click", function () { copyText($("webhookUrl").textContent, "webhook URL"); });
+  $("debugDump").addEventListener("change", function () {
+    var on = this.checked;
+    postJson("/api/settings/debug", { enabled: on }).then(function () {
+      toast(on ? "Saving raw pages to debug_out" : "Stopped saving raw pages");
+    });
+  });
+  $("btnCopyBookmarklet").addEventListener("click", function () {
+    copyText($("bookmarklet").dataset.code || "", "bookmarklet code");
+  });
+  $("bookmarklet").addEventListener("click", function (ev) { ev.preventDefault(); });
+  $("linkForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var form = ev.target;
+    var body = { email: form.elements.email.value, session_key: form.elements.session_key.value,
+                 csrf_token: form.elements.csrf_token.value, proxy: form.elements.proxy.value };
+    $("linkResult").textContent = "Linking...";
+    api(form.dataset.url, { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(body) }).then(function (res) {
+      var who = res.account ? res.account.email : "account";
+      if (res.validated) {
+        $("linkResult").textContent = "Linked " + who + " - session is live.";
+      } else if (res.pending) {
+        $("linkResult").textContent = "Saved " + who + ". The background browser is verifying it; " +
+          "watch its status in the list.";
+      } else if (res.reachable) {
+        $("linkResult").textContent = "Saved " + who + ", but " + (res.detail || "not validated") +
+          ". It will keep retrying.";
+      } else {
+        $("linkResult").textContent = "Saved " + who + ", but " + (res.detail || "could not validate") + ".";
+      }
+      form.reset();
+      loadAccounts();
+    }).catch(function (err) { $("linkResult").textContent = "Failed: " + err.message; });
+  });
+  $("addForm").elements.platform.addEventListener("change", syncFormFields);
+  $("addForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var form = ev.target;
+    var body = {};
+    Array.prototype.forEach.call(form.elements, function (field) {
+      if (field.name && field.value && !field.closest(".hidden")) { body[field.name] = field.value; }
+    });
+    postJson("/api/accounts", body).then(function () {
+      var platform = form.elements.platform.value;
+      form.reset();
+      form.elements.platform.value = platform;
+      syncFormFields();
+      toast("Account saved");
+      loadAccounts();
+    }).catch(function (err) { toast("Not saved: " + err.message); });
+  });
+  $("importFile").addEventListener("change", function () {
+    if (!this.files.length) { return; }
+    var data = new FormData();
+    data.append("file", this.files[0]);
+    var input = this;
+    api("/api/accounts/import", { method: "POST", body: data }).then(function (res) {
+      $("importResult").textContent = "Added " + res.added + ", updated " + res.updated +
+        (res.errors.length ? "\nSkipped:\n" + res.errors.join("\n") : "");
+      input.value = "";
+      loadAccounts();
+    }).catch(function (err) { $("importResult").textContent = "Import failed: " + err.message; });
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "/" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+      ev.preventDefault(); $("search").focus();
+    } else if (ev.key === "Escape") { $("modal").classList.add("hidden"); }
+  });
+  window.addEventListener("focus", function () { document.title = "Master Inbox"; });
+
+  loadEmails(true);
+  loadFacets();
+  connectSocket();
+  // Safety net if the socket is blocked: light polling, also refreshes relative times.
+  setInterval(function () { refreshVisible(); loadFacets(); }, 30000);
+  // Second safety net, every 3 seconds and very cheap: if the mail count
+  // moved without a socket event (proxy dropped it, tab was asleep), sync.
+  var lastTotals = "";
+  setInterval(function () {
+    api("/api/facets").then(function (data) {
+      var totals = data.total + "/" + data.unread;
+      if (lastTotals && totals !== lastTotals) { state.facets = data; refreshVisible(); }
+      lastTotals = totals;
+    }).catch(function () {});
+  }, 3000);
+})();
+</script>
+</body>
+</html>

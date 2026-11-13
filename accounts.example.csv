@@ -1,0 +1,4 @@
+platform,email,password,mode,session_key,proxy,folders,client_id,client_secret,refresh_token,tenant
+gmail,first.account@gmail.com,abcd efgh ijkl mnop,,,,INBOX;[Gmail]/Spam,,,,
+outlook,second.account@outlook.com,,,,,,00000000-0000-0000-0000-000000000000,,PASTE_REFRESH_TOKEN,consumers
+instaddr,instaddr-box-label,,browser,,socks5://user:pass@host:1080,,,,,

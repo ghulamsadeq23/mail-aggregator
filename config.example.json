@@ -1,0 +1,71 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "dashboard_password": ""
+  },
+  "database_path": "emails.db",
+  "imap": {
+    "poll_interval": 10,
+    "initial_fetch": 20,
+    "folders": [
+      "INBOX"
+    ]
+  },
+  "instaddr": {
+    "base_url": "https://m.kuku.lu",
+    "poll_interval": 2,
+    "initial_fetch": 20,
+    "forward_domains": [
+      "my-custom-domain.com"
+    ],
+    "list_regex": "",
+    "browser": {
+      "headless": true,
+      "channel": "msedge",
+      "profile_dir": "browser_profiles",
+      "inbox_path": "/recv.php",
+      "reload_minutes": 5,
+      "capture_timeout": 10,
+      "session_guard": true,
+      "page_param": "",
+      "page_base": 0,
+      "max_pages": 50
+    },
+    "body_selector": "",
+    "debug_dump": false
+  },
+  "smtp_receiver": {
+    "enabled": false,
+    "host": "0.0.0.0",
+    "port": 2525
+  },
+  "webhook_secret": "",
+  "accounts": [
+    {
+      "platform": "gmail",
+      "email": "first.account@gmail.com",
+      "password": "abcd efgh ijkl mnop",
+      "folders": [
+        "INBOX",
+        "[Gmail]/Spam"
+      ]
+    },
+    {
+      "platform": "outlook",
+      "email": "second.account@outlook.com",
+      "oauth": {
+        "client_id": "00000000-0000-0000-0000-000000000000",
+        "client_secret": "",
+        "refresh_token": "PASTE_REFRESH_TOKEN_FROM_tools/oauth_helper.py",
+        "tenant": "consumers"
+      }
+    },
+    {
+      "platform": "instaddr",
+      "email": "instaddr-box-label",
+      "mode": "browser",
+      "proxy": ""
+    }
+  ]
+}
